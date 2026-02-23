@@ -1,0 +1,40 @@
+# Environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Pywebview and browser caches
+webview_cache/
+Default/
+GPUCache/
+
+# yt-dlp specific
+*.part
+*.ytdl
+*.webm
+*.mp4
+*.mp3
+*.m4a
+*.part-Frag*
+
+# PyInstaller / Build artifacts (if you build the exe later)
+build/
+dist/
+*.spec
+*.egg-info/
+.eggs/
+
+# IDEs and Editors
+.idea/
+.vscode/
+*.swp
+*.swo
