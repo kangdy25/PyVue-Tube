@@ -39,14 +39,14 @@ def prepare_icons():
     print("🎨 Preparing application icons...")
     root_dir = get_project_root()
     
-    # We'll use 'app_icon.png' as the expected name of the uploaded image.
+    # We'll use 'icon.png' as the expected name of the uploaded image.
     # Moving it to frontend/public keeps the root directory clean.
     public_dir = os.path.join(root_dir, 'frontend', 'public')
-    base_icon_path = os.path.join(public_dir, 'app_icon.png')
+    base_icon_path = os.path.join(public_dir, 'icon.png')
     
     if not os.path.exists(base_icon_path):
-        print("⚠️ 'app_icon.png' not found in frontend/public directory!")
-        print("Run this script again after placing your uploaded image as 'frontend/public/app_icon.png'.")
+        print("⚠️ 'icon.png' not found in frontend/public directory!")
+        print("Run this script again after placing your uploaded image as 'frontend/public/icon.png'.")
         sys.exit(1)
 
     try:
@@ -54,12 +54,12 @@ def prepare_icons():
         
         # Determine target formats based on OS
         if platform.system() == 'Windows':
-            icon_out = os.path.join(public_dir, 'app_icon.ico')
+            icon_out = os.path.join(public_dir, 'icon.ico')
             img.save(icon_out, format='ICO', sizes=[(256, 256), (128, 128), (64, 64), (32, 32)])
             print(f"✅ Generated {icon_out}")
             return icon_out
         elif platform.system() == 'Darwin':
-            icon_out = os.path.join(public_dir, 'app_icon.icns')
+            icon_out = os.path.join(public_dir, 'icon.icns')
             # Currently relying on pillow-icns or similar, or saving as PNG if external tool is needed.
             # But Pillow supports writing basic ICNS up to certain sizes.
             # We'll save it using Pillow. If it fails, we default to using a high-res PNG
@@ -87,8 +87,9 @@ def build_pyinstaller(icon_path):
     separator = ';' if platform.system() == 'Windows' else ':'
     
     # PyInstaller Arguments
+    python_exe = os.path.join(root_dir, 'backend', 'venv', 'Scripts', 'python.exe') if platform.system() == 'Windows' else os.path.join(root_dir, 'backend', 'venv', 'bin', 'python')
     args = [
-        sys.executable, '-m', 'PyInstaller',
+        python_exe, '-m', 'PyInstaller',
         '--noconfirm',
         '--onefile',
         '--windowed', # Same as --noconsole

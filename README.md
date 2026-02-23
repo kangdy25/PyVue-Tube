@@ -1,6 +1,6 @@
 # PyVue-Tube 🎵
 
-![PyVue-Tube Icon](frontend/public/app_icon.png)
+![PyVue-Tube Icon](frontend/public/icon.png)
 
 A modern, fast, and lightweight YouTube video and audio downloader built with **Vue 3** for the frontend and **Python (pywebview + yt-dlp)** for the backend.
 
@@ -61,7 +61,7 @@ python main.py
 We provide an automated build script `build.py` to package the application into a single executable file.
 
 ### Prerequisites
-Make sure your custom app icon is located at `frontend/public/app_icon.png`.
+Make sure your custom app icon is located at `frontend/public/icon.png`.
 
 ### Build Command
 Run the build script from the project root:

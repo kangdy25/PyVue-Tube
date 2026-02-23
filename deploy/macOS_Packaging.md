@@ -20,7 +20,7 @@ python deploy/build.py
 This will:
 1. Build the Vue.js frontend.
 2. Copy the correct `ffmpeg` binary.
-3. Generate the `app_icon.icns` file from `app_icon.png`.
+3. Generate the `icon.icns` file from `icon.png`.
 4. Run PyInstaller and output a `PyVue-Tube.app` in the `dist/` directory.
 
 ## Step 2: Test the `.app` Bundle
@@ -36,7 +36,7 @@ Navigate to your project root and run `create-dmg`:
 ```bash
 create-dmg \
   --volname "PyVue-Tube Installer" \
-  --volicon "app_icon.icns" \
+  --volicon "icon.icns" \
   --window-pos 200 120 \
   --window-size 800 400 \
   --icon-size 100 \
