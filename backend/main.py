@@ -4,6 +4,34 @@ import threading
 import sys
 import os
 import imageio_ffmpeg
+import platform
+
+def get_resource_path(relative_path):
+    """
+    Get absolute path to resource, works for dev and for PyInstaller.
+    """
+    try:
+        # PyInstaller creates a temp folder and stores path in _MEIPASS
+        base_path = sys._MEIPASS
+    except Exception:
+        base_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+
+    return os.path.join(base_path, relative_path)
+
+def get_ffmpeg_path():
+    """
+    Get the path to the ffmpeg executable.
+    In PyInstaller bundle, we expect it in the 'bin' directory.
+    """
+    try:
+        base_path = sys._MEIPASS
+        # We will copy imageio_ffmpeg's binary to our bundled 'bin' folder
+        exe_name = 'ffmpeg.exe' if platform.system() == 'Windows' else 'ffmpeg'
+        return os.path.join(base_path, 'bin', exe_name)
+    except Exception:
+        # Not bundled, use imageio_ffmpeg directly
+        return imageio_ffmpeg.get_ffmpeg_exe()
+
 
 class BackendApi:
     def __init__(self):
@@ -14,7 +42,7 @@ class BackendApi:
         ydl_opts = {
             'quiet': True,
             'skip_download': True,
-            'ffmpeg_location': imageio_ffmpeg.get_ffmpeg_exe(),
+            'ffmpeg_location': get_ffmpeg_path(),
         }
         try:
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -55,7 +83,7 @@ class BackendApi:
         ydl_opts = {
             'outtmpl': os.path.join(downloads_dir, '%(title)s.%(ext)s'), # 다운로드 파일명 형식
             'progress_hooks': [progress_hook],
-            'ffmpeg_location': imageio_ffmpeg.get_ffmpeg_exe(),
+            'ffmpeg_location': get_ffmpeg_path(),
         }
 
         # 🎯 yt-dlp 포맷/옵션 설정
@@ -88,9 +116,11 @@ def main():
     
     # 개발 모드일 경우 Vite 구동 주소인 localhost:5173 사용
     url = 'http://localhost:5173'
-    if len(sys.argv) > 1 and sys.argv[1] == '--prod':
-        # 빌드 후 배포 시에는 로컬 파일 경로 사용
-        url = os.path.join(os.path.dirname(__file__), '..', 'frontend', 'dist', 'index.html')
+    
+    # sys.frozen은 PyInstaller로 패키징되었을 때 True가 됩니다.
+    if getattr(sys, 'frozen', False) or (len(sys.argv) > 1 and sys.argv[1] == '--prod'):
+        # 빌드 후 배포 시에는 PyInstaller MEIPASS 또는 상위 폴더 기준의 경로 사용
+        url = get_resource_path(os.path.join('frontend', 'dist', 'index.html'))
 
     window = webview.create_window(
         title='PyVue-Tube 🎵', 
@@ -101,7 +131,8 @@ def main():
         background_color='#111827' # 다크모드 배경색 매칭 (gray-900)
     )
     api.window = window
-    webview.start(debug=True)
+    is_prod = getattr(sys, 'frozen', False) or (len(sys.argv) > 1 and sys.argv[1] == '--prod')
+    webview.start(debug=not is_prod)
 
 if __name__ == '__main__':
     main()
