@@ -39,20 +39,101 @@ class BackendApi:
 
     # 1. 영상 정보 가져오기 (JS -> Python 호출)
     def get_info(self, url):
-        ydl_opts = {
-            'quiet': True,
-            'skip_download': True,
-            'ffmpeg_location': get_ffmpeg_path(),
-        }
+        import urllib.parse
+        parsed = urllib.parse.urlparse(url)
+        query = urllib.parse.parse_qs(parsed.query)
+        
+        has_playlist = 'list' in query
+        has_video = 'v' in query or 'youtu.be' in parsed.netloc or parsed.path.startswith('/shorts/')
+        
+        video_id = None
+        if 'youtu.be' in parsed.netloc:
+            video_id = parsed.path.strip('/')
+            has_video = True
+        elif 'v' in query:
+            video_id = query['v'][0]
+            
+        playlist_id = query['list'][0] if 'list' in query else None
+        
+        playlist_info = None
+        video_info = None
+        
         try:
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                info = ydl.extract_info(url, download=False)
+            # 1. 재생목록 정보 가져오기
+            if has_playlist:
+                playlist_url = f"https://www.youtube.com/playlist?list={playlist_id}"
+                ydl_opts_playlist = {
+                    'quiet': True,
+                    'skip_download': True,
+                    'extract_flat': True,
+                    'ffmpeg_location': get_ffmpeg_path(),
+                }
+                with yt_dlp.YoutubeDL(ydl_opts_playlist) as ydl:
+                    p_info = ydl.extract_info(playlist_url, download=False)
+                    thumbnails = p_info.get('thumbnails') or []
+                    thumbnail_url = thumbnails[-1].get('url') if thumbnails else None
+                    if not thumbnail_url:
+                        entries = p_info.get('entries') or []
+                        if entries and entries[0].get('thumbnails'):
+                            thumbnail_url = entries[0]['thumbnails'][-1].get('url')
+                    playlist_info = {
+                        'title': p_info.get('title'),
+                        'thumbnail': thumbnail_url,
+                        'video_count': len(p_info.get('entries', [])),
+                        'url': playlist_url
+                    }
+                    
+            # 2. 영상 정보 가져오기
+            if has_video:
+                video_url = url
+                ydl_opts_video = {
+                    'quiet': True,
+                    'skip_download': True,
+                    'noplaylist': True,
+                    'ffmpeg_location': get_ffmpeg_path(),
+                }
+                with yt_dlp.YoutubeDL(ydl_opts_video) as ydl:
+                    v_info = ydl.extract_info(video_url, download=False)
+                    video_info = {
+                        'title': v_info.get('title'),
+                        'thumbnail': v_info.get('thumbnail'),
+                        'duration': v_info.get('duration'),
+                        'url': video_url
+                    }
+                    
+            # 결합된 결과 반환
+            if playlist_info and video_info:
                 return {
                     'success': True,
-                    'title': info.get('title'),
-                    'thumbnail': info.get('thumbnail'),
-                    'duration': info.get('duration')
+                    'is_playlist': True,
+                    'title': playlist_info['title'],
+                    'thumbnail': playlist_info['thumbnail'],
+                    'video_count': playlist_info['video_count'],
+                    'url': playlist_info['url'],
+                    'video_title': video_info['title'],
+                    'video_thumbnail': video_info['thumbnail'],
+                    'video_duration': video_info['duration'],
+                    'video_url': video_info['url']
                 }
+            elif playlist_info:
+                return {
+                    'success': True,
+                    'is_playlist': True,
+                    'title': playlist_info['title'],
+                    'thumbnail': playlist_info['thumbnail'],
+                    'video_count': playlist_info['video_count'],
+                    'url': playlist_info['url']
+                }
+            elif video_info:
+                return {
+                    'success': True,
+                    'title': video_info['title'],
+                    'thumbnail': video_info['thumbnail'],
+                    'duration': video_info['duration']
+                }
+            else:
+                return {'success': False, 'error': '유효한 영상 또는 재생목록 정보를 찾을 수 없습니다.'}
+                
         except Exception as e:
             return {'success': False, 'error': str(e)}
 
@@ -72,12 +153,31 @@ class BackendApi:
                 downloaded = d.get('downloaded_bytes', 0)
                 if total:
                     percent = (downloaded / total) * 100
-                    # Python -> JS로 진행률 전송 (JS의 글로벌 함수 호출)
-                    if webview.windows:
-                        webview.windows[0].evaluate_js(f"window.updateProgress({percent})")
+                    
+                    info = d.get('info_dict', {})
+                    playlist_index = info.get('playlist_index')
+                    playlist_count = info.get('playlist_count') or info.get('n_entries')
+                    
+                    if playlist_index is not None and playlist_count is not None:
+                        overall_percent = ((playlist_index - 1) / playlist_count) * 100 + (percent / playlist_count)
+                        title = info.get('title', '영상')
+                        status_text = f"다운로드 중 ({playlist_index}/{playlist_count}): {title}"
+                        if webview.windows:
+                            webview.windows[0].evaluate_js(f"window.updateProgress({overall_percent}, '{status_text}')")
+                    else:
+                        if webview.windows:
+                            webview.windows[0].evaluate_js(f"window.updateProgress({percent})")
             elif d['status'] == 'finished':
-                if webview.windows:
-                    webview.windows[0].evaluate_js(f"window.updateStatus('처리 중...')")
+                info = d.get('info_dict', {})
+                playlist_index = info.get('playlist_index')
+                playlist_count = info.get('playlist_count') or info.get('n_entries')
+                if playlist_index is not None and playlist_count is not None:
+                    status_text = f"처리 중 ({playlist_index}/{playlist_count})..."
+                    if webview.windows:
+                        webview.windows[0].evaluate_js(f"window.updateStatus('{status_text}')")
+                else:
+                    if webview.windows:
+                        webview.windows[0].evaluate_js("window.updateStatus('처리 중...')")
 
         downloads_dir = os.path.join(os.path.expanduser('~'), 'Downloads')
         ydl_opts = {

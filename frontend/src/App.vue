@@ -54,9 +54,9 @@ const progress = ref(0)
 const downloadStatus = ref('')
 
 onMounted(() => {
-  window.updateProgress = (p) => {
+  window.updateProgress = (p, statusText) => {
     progress.value = p
-    downloadStatus.value = 'Downloading files...'
+    downloadStatus.value = statusText || 'Downloading files...'
   }
   window.updateStatus = (status) => {
     downloadStatus.value = status
@@ -95,11 +95,26 @@ const fetchInfo = async () => {
       }
     } else {
       setTimeout(() => {
-        videoInfo.value = {
-          success: true,
-          title: "UI Design Preview Mode (No Backend Connected)",
-          thumbnail: "https://images.unsplash.com/photo-1611162617474-5b21e879e113?q=80&w=1000&auto=format&fit=crop",
-          duration: 365
+        if (url.value.includes('list=')) {
+          videoInfo.value = {
+            success: true,
+            is_playlist: true,
+            title: "Mock Playlist: Vue.js & Python Integration Tutorial",
+            thumbnail: "https://images.unsplash.com/photo-1611162617474-5b21e879e113?q=80&w=1000&auto=format&fit=crop",
+            video_count: 5,
+            url: url.value,
+            video_title: "Mock Video: 1. Setup pywebview and Vite",
+            video_thumbnail: "https://images.unsplash.com/photo-1611162617474-5b21e879e113?q=80&w=1000&auto=format&fit=crop",
+            video_duration: 365,
+            video_url: url.value.split('&list=')[0]
+          }
+        } else {
+          videoInfo.value = {
+            success: true,
+            title: "UI Design Preview Mode (No Backend Connected)",
+            thumbnail: "https://images.unsplash.com/photo-1611162617474-5b21e879e113?q=80&w=1000&auto=format&fit=crop",
+            duration: 365
+          }
         }
         isLoading.value = false
       }, 1000)
@@ -111,13 +126,14 @@ const fetchInfo = async () => {
   }
 }
 
-const startDownload = async (type) => {
+const startDownload = async (type, targetUrl) => {
   isDownloading.value = true
   progress.value = 0
   downloadStatus.value = 'Connecting to server...'
+  const downloadUrl = targetUrl || url.value
   try {
     if (window.pywebview && window.pywebview.api) {
-      const res = await window.pywebview.api.download(url.value, type)
+      const res = await window.pywebview.api.download(downloadUrl, type)
       if (!res.success) {
         alert('Error: ' + res.error)
         isDownloading.value = false
@@ -127,9 +143,12 @@ const startDownload = async (type) => {
       let p = 0
       const interval = setInterval(() => {
         p += 2.5
-        window.updateProgress(p)
-        if (p >= 50) window.updateStatus("Extracting audio stream...")
-        if (p >= 80) window.updateStatus("Converting to format...")
+        const currentVideo = Math.min(Math.ceil(p / 20), 5)
+        window.updateProgress(p, downloadUrl.includes('list=') 
+          ? `Downloading files (${currentVideo}/5): Mock Video Part ${currentVideo}` 
+          : 'Downloading files...')
+        if (p >= 50 && !downloadUrl.includes('list=')) window.updateStatus("Extracting audio stream...")
+        if (p >= 80 && !downloadUrl.includes('list=')) window.updateStatus("Converting to format...")
         if (p >= 100) {
           clearInterval(interval)
           window.downloadComplete(true, "Download Finished (Test Mode)")
