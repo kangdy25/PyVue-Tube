@@ -1,5 +1,14 @@
-# Vue 3 + Vite
+# ArchiveTube Frontend
 
-This template should help get you started developing with Vue 3 in Vite. The template uses Vue 3 `<script setup>` SFCs, check out the [script setup docs](https://v3.vuejs.org/api/sfc-script-setup.html#sfc-script-setup) to learn more.
+ArchiveTube의 Vue 3 사용자 인터페이스입니다. Vite와 SCSS를 사용하며, `pywebview`를 통해 Python 백엔드 API와 통신합니다.
 
-Learn more about IDE Support for Vue in the [Vue Docs Scaling up Guide](https://vuejs.org/guide/scaling-up/tooling.html#ide-support).
+```bash
+npm install
+npm run dev
+```
+
+프로덕션 프런트엔드 빌드는 다음 명령으로 생성합니다.
+
+```bash
+npm run build
+```

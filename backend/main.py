@@ -5,6 +5,7 @@ import sys
 import os
 import imageio_ffmpeg
 import platform
+import json
 
 def get_resource_path(relative_path):
     """
@@ -129,7 +130,8 @@ class BackendApi:
                     'success': True,
                     'title': video_info['title'],
                     'thumbnail': video_info['thumbnail'],
-                    'duration': video_info['duration']
+                    'duration': video_info['duration'],
+                    'url': video_info['url']
                 }
             else:
                 return {'success': False, 'error': '유효한 영상 또는 재생목록 정보를 찾을 수 없습니다.'}
@@ -138,78 +140,177 @@ class BackendApi:
             return {'success': False, 'error': str(e)}
 
     # 2. 다운로드 시작 (백그라운드 스레드 실행)
-    def download(self, url, format_type='video'):
+    def download(self, url, format_type='video', scope=None):
+        """Start a single-video or whole-playlist download in the background."""
+        if format_type not in ('audio', 'video'):
+            return {'success': False, 'error': '지원하지 않는 다운로드 형식입니다.'}
+
+        # Keep calls from older frontends working while making mixed URLs default to
+        # a playlist download. The UI always supplies the scope explicitly.
+        if scope is None:
+            scope = 'playlist' if 'list=' in url else 'single'
+        if scope not in ('playlist', 'single'):
+            return {'success': False, 'error': '지원하지 않는 다운로드 범위입니다.'}
+
         # 메인 UI가 멈추지 않도록 스레드로 실행
-        thread = threading.Thread(target=self._download_thread, args=(url, format_type))
+        thread = threading.Thread(
+            target=self._download_thread,
+            args=(url, format_type, scope),
+            daemon=True,
+        )
         thread.start()
         return {'success': True}
 
-    # 3. 실제 다운로드와 FFmpeg 설정 (yt-dlp 로직)
-    def _download_thread(self, url, format_type):
-        def progress_hook(d):
-            if d['status'] == 'downloading':
-                # 진행률 계산
-                total = d.get('total_bytes') or d.get('total_bytes_estimate')
-                downloaded = d.get('downloaded_bytes', 0)
-                if total:
-                    percent = (downloaded / total) * 100
-                    
-                    info = d.get('info_dict', {})
-                    playlist_index = info.get('playlist_index')
-                    playlist_count = info.get('playlist_count') or info.get('n_entries')
-                    
-                    if playlist_index is not None and playlist_count is not None:
-                        overall_percent = ((playlist_index - 1) / playlist_count) * 100 + (percent / playlist_count)
-                        title = info.get('title', '영상')
-                        status_text = f"다운로드 중 ({playlist_index}/{playlist_count}): {title}"
-                        if webview.windows:
-                            webview.windows[0].evaluate_js(f"window.updateProgress({overall_percent}, '{status_text}')")
-                    else:
-                        if webview.windows:
-                            webview.windows[0].evaluate_js(f"window.updateProgress({percent})")
-            elif d['status'] == 'finished':
-                info = d.get('info_dict', {})
-                playlist_index = info.get('playlist_index')
-                playlist_count = info.get('playlist_count') or info.get('n_entries')
-                if playlist_index is not None and playlist_count is not None:
-                    status_text = f"처리 중 ({playlist_index}/{playlist_count})..."
-                    if webview.windows:
-                        webview.windows[0].evaluate_js(f"window.updateStatus('{status_text}')")
-                else:
-                    if webview.windows:
-                        webview.windows[0].evaluate_js("window.updateStatus('처리 중...')")
+    def _emit_to_frontend(self, function_name, payload):
+        """Send JSON, rather than interpolated strings, to the Vue window safely."""
+        if not webview.windows:
+            return
+        try:
+            payload_json = json.dumps(payload, ensure_ascii=False)
+            webview.windows[0].evaluate_js(f"window.{function_name}({payload_json})")
+        except Exception:
+            # A closing application window must not stop the downloader thread.
+            pass
 
-        downloads_dir = os.path.join(os.path.expanduser('~'), 'Downloads')
-        ydl_opts = {
-            'outtmpl': os.path.join(downloads_dir, '%(title)s.%(ext)s'), # 다운로드 파일명 형식
+    @staticmethod
+    def _entry_key(info):
+        return str(info.get('id') or info.get('playlist_index') or info.get('title') or '')
+
+    @staticmethod
+    def _download_template(downloads_dir, scope):
+        if scope == 'playlist':
+            return os.path.join(
+                downloads_dir,
+                '%(playlist_title)s',
+                '%(playlist_index)02d - %(title)s.%(ext)s',
+            )
+        return os.path.join(downloads_dir, '%(title)s.%(ext)s')
+
+    def _build_download_options(self, downloads_dir, format_type, scope, progress_hook):
+        options = {
+            'outtmpl': self._download_template(downloads_dir, scope),
             'progress_hooks': [progress_hook],
             'ffmpeg_location': get_ffmpeg_path(),
         }
 
-        # 🎯 yt-dlp 포맷/옵션 설정
+        if scope == 'playlist':
+            # A deleted/private entry must not prevent the rest of the playlist
+            # from completing.
+            options['ignoreerrors'] = True
+        else:
+            # A watch URL can contain a list parameter; this keeps the explicit
+            # "current video only" action scoped to that one video.
+            options['noplaylist'] = True
+
         if format_type == 'audio':
-            ydl_opts.update({
+            options.update({
                 'format': 'bestaudio/best',
                 'postprocessors': [{
                     'key': 'FFmpegExtractAudio',
                     'preferredcodec': 'mp3',
-                    'preferredquality': '192', # 192kbps 고음질
+                    'preferredquality': '192',
                 }],
             })
-        else: # 비디오 (최고화질 영상 + 오디오 병합)
-            ydl_opts.update({
+        else:
+            options.update({
                 'format': 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
                 'merge_output_format': 'mp4',
             })
+        return options
+
+    # 3. 실제 다운로드와 FFmpeg 설정 (yt-dlp 로직)
+    def _download_thread(self, url, format_type, scope):
+        completed_entries = set()
+        failed_entries = set()
+        playlist_total = 0
+
+        def playlist_state(info):
+            nonlocal playlist_total
+            current = info.get('playlist_index') if scope == 'playlist' else None
+            total = (
+                info.get('playlist_count') or info.get('n_entries')
+                if scope == 'playlist'
+                else None
+            )
+            if total:
+                playlist_total = max(playlist_total, int(total))
+            return current, playlist_total or total
+
+        def send_progress(percent, status, info):
+            current, total = playlist_state(info)
+            self._emit_to_frontend('updateProgress', {
+                'percent': max(0, min(percent, 100)),
+                'status': status,
+                'current': current,
+                'total': total,
+                'completed': len(completed_entries),
+                'failed': len(failed_entries),
+            })
+
+        def progress_hook(d):
+            info = d.get('info_dict', {})
+            current, total = playlist_state(info)
+            title = info.get('title', '영상')
+
+            if d['status'] == 'downloading':
+                total = d.get('total_bytes') or d.get('total_bytes_estimate')
+                downloaded = d.get('downloaded_bytes', 0)
+                if total:
+                    percent = (downloaded / total) * 100
+                    if scope == 'playlist' and current is not None and playlist_total:
+                        overall_percent = ((current - 1) + (percent / 100)) / playlist_total * 100
+                        status_text = f"다운로드 중 ({current}/{playlist_total}): {title}"
+                        send_progress(overall_percent, status_text, info)
+                    else:
+                        send_progress(percent, f"다운로드 중: {title}", info)
+            elif d['status'] == 'finished':
+                completed_entries.add(self._entry_key(info))
+                if scope == 'playlist' and current is not None and playlist_total:
+                    status_text = f"처리 중 ({current}/{playlist_total}): {title}"
+                    send_progress(current / playlist_total * 100, status_text, info)
+                else:
+                    send_progress(100, f"처리 중: {title}", info)
+            elif d['status'] == 'error':
+                failed_entries.add(self._entry_key(info))
+                if scope == 'playlist' and current is not None and playlist_total:
+                    status_text = f"건너뜀 ({current}/{playlist_total}): {title}"
+                    send_progress((current / playlist_total) * 100, status_text, info)
+
+        downloads_dir = os.path.join(os.path.expanduser('~'), 'Downloads')
+        ydl_opts = self._build_download_options(downloads_dir, format_type, scope, progress_hook)
 
         try:
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                ydl.download([url])
-            if webview.windows:
-                webview.windows[0].evaluate_js("window.downloadComplete(true, '다운로드 완료! (다운로드 폴더를 확인하세요)')")
+                result_code = ydl.download([url])
+
+            failed_count = len(failed_entries)
+            completed_count = len(completed_entries)
+            if scope == 'playlist' and playlist_total:
+                # Not every extractor emits an error hook for unavailable entries.
+                failed_count = max(failed_count, playlist_total - completed_count)
+            elif result_code and not completed_count:
+                failed_count = max(failed_count, 1)
+
+            total_count = playlist_total or completed_count + failed_count
+            if failed_count:
+                message = f"다운로드 완료: {completed_count}/{total_count}개 성공, {failed_count}개 실패"
+            else:
+                message = '다운로드 완료! (다운로드 폴더를 확인하세요)'
+            self._emit_to_frontend('downloadComplete', {
+                'success': failed_count == 0,
+                'completed': completed_count,
+                'failed': failed_count,
+                'total': total_count,
+                'message': message,
+            })
         except Exception as e:
-            if webview.windows:
-                webview.windows[0].evaluate_js(f"window.downloadComplete(false, '오류 발생: {str(e)}')")
+            self._emit_to_frontend('downloadComplete', {
+                'success': False,
+                'completed': len(completed_entries),
+                'failed': max(1, len(failed_entries)),
+                'total': playlist_total or len(completed_entries) + 1,
+                'message': f"오류 발생: {str(e)}",
+            })
 
 def main():
     api = BackendApi()
@@ -223,7 +324,7 @@ def main():
         url = get_resource_path(os.path.join('frontend', 'dist', 'index.html'))
 
     window = webview.create_window(
-        title='PyVue-Tube 🎵', 
+        title='ArchiveTube',
         url=url, 
         js_api=api, 
         width=900, 

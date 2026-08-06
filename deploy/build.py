@@ -6,6 +6,8 @@ import platform
 import imageio_ffmpeg
 from PIL import Image
 
+APP_NAME = 'ArchiveTube'
+
 def get_project_root():
     # Since build.py is now in the 'deploy' folder, the project root is its parent directory
     return os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -91,15 +93,18 @@ def build_pyinstaller(icon_path):
     args = [
         python_exe, '-m', 'PyInstaller',
         '--noconfirm',
-        '--onefile',
+        '--onefile' if platform.system() == 'Windows' else '--onedir',
         '--windowed', # Same as --noconsole
-        '--name', 'PyVue-Tube',
+        '--name', APP_NAME,
         f'--add-data=frontend/dist{separator}frontend/dist',
         f'--add-data=bin{separator}bin',
     ]
     
     if icon_path:
         args.extend(['--icon', icon_path])
+
+    if platform.system() == 'Darwin':
+        args.extend(['--osx-bundle-identifier', 'com.archivetube.app'])
         
     args.append(backend_main)
     
@@ -110,7 +115,11 @@ def build_pyinstaller(icon_path):
         print("❌ PyInstaller build failed!")
         sys.exit(1)
     
-    dist_file = os.path.join(root_dir, 'dist', 'PyVue-Tube.exe' if platform.system() == 'Windows' else 'PyVue-Tube.app')
+    dist_file = os.path.join(
+        root_dir,
+        'dist',
+        f'{APP_NAME}.exe' if platform.system() == 'Windows' else f'{APP_NAME}.app',
+    )
     print(f"🎉 Build successful! Executable is at: {dist_file}")
 
 if __name__ == '__main__':

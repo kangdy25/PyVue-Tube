@@ -3,8 +3,8 @@
     <div class="logo-icon-wrapper">
       <Youtube class="logo-icon" />
     </div>
-    <h1 class="app-title">PyVue-Tube</h1>
-    <p class="app-subtitle">Premium YouTube Downloader</p>
+    <h1 class="app-title">ArchiveTube</h1>
+    <p class="app-subtitle">Your YouTube Media Archive</p>
   </header>
 </template>
 

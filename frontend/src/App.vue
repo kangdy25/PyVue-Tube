@@ -32,6 +32,10 @@
           v-if="isDownloading"
           :progress="progress"
           :downloadStatus="downloadStatus"
+          :current="currentItem"
+          :total="totalItems"
+          :completed="completedItems"
+          :failed="failedItems"
         />
       </transition>
 
@@ -52,27 +56,33 @@ const isLoading = ref(false)
 const isDownloading = ref(false)
 const progress = ref(0)
 const downloadStatus = ref('')
+const currentItem = ref(null)
+const totalItems = ref(null)
+const completedItems = ref(0)
+const failedItems = ref(0)
 
 onMounted(() => {
-  window.updateProgress = (p, statusText) => {
-    progress.value = p
-    downloadStatus.value = statusText || 'Downloading files...'
+  window.updateProgress = (update) => {
+    progress.value = update.percent
+    downloadStatus.value = update.status || '다운로드 중...'
+    currentItem.value = update.current ?? null
+    totalItems.value = update.total ?? null
+    completedItems.value = update.completed ?? 0
+    failedItems.value = update.failed ?? 0
   }
-  window.updateStatus = (status) => {
-    downloadStatus.value = status
+  window.updateStatus = (update) => {
+    downloadStatus.value = update.status || update
   }
-  window.downloadComplete = (success, msg) => {
-    progress.value = 100;
-    downloadStatus.value = success ? 'Processing Completed!' : 'Error occurred';
+  window.downloadComplete = (result) => {
+    progress.value = 100
+    downloadStatus.value = result.message
+    totalItems.value = result.total || totalItems.value
+    completedItems.value = result.completed || 0
+    failedItems.value = result.failed || 0
     setTimeout(() => { 
-      isDownloading.value = false; 
-      progress.value = 0; 
-      url.value = ''; 
-      videoInfo.value = null; 
-    }, 3000)
-    if (!success) {
-      setTimeout(() => alert(msg), 100);
-    }
+      isDownloading.value = false
+      progress.value = 0
+    }, 5000)
   }
 })
 
@@ -126,14 +136,18 @@ const fetchInfo = async () => {
   }
 }
 
-const startDownload = async (type, targetUrl) => {
+const startDownload = async (type, targetUrl, scope = 'single') => {
   isDownloading.value = true
   progress.value = 0
-  downloadStatus.value = 'Connecting to server...'
+  downloadStatus.value = '다운로드 준비 중...'
+  currentItem.value = null
+  totalItems.value = null
+  completedItems.value = 0
+  failedItems.value = 0
   const downloadUrl = targetUrl || url.value
   try {
     if (window.pywebview && window.pywebview.api) {
-      const res = await window.pywebview.api.download(downloadUrl, type)
+      const res = await window.pywebview.api.download(downloadUrl, type, scope)
       if (!res.success) {
         alert('Error: ' + res.error)
         isDownloading.value = false
@@ -144,14 +158,26 @@ const startDownload = async (type, targetUrl) => {
       const interval = setInterval(() => {
         p += 2.5
         const currentVideo = Math.min(Math.ceil(p / 20), 5)
-        window.updateProgress(p, downloadUrl.includes('list=') 
-          ? `Downloading files (${currentVideo}/5): Mock Video Part ${currentVideo}` 
-          : 'Downloading files...')
-        if (p >= 50 && !downloadUrl.includes('list=')) window.updateStatus("Extracting audio stream...")
-        if (p >= 80 && !downloadUrl.includes('list=')) window.updateStatus("Converting to format...")
+        const isPlaylist = scope === 'playlist'
+        window.updateProgress({
+          percent: p,
+          status: isPlaylist
+            ? `다운로드 중 (${currentVideo}/5): Mock Video Part ${currentVideo}`
+            : '다운로드 중...',
+          current: isPlaylist ? currentVideo : null,
+          total: isPlaylist ? 5 : null,
+          completed: isPlaylist ? Math.max(0, currentVideo - 1) : 0,
+          failed: 0
+        })
         if (p >= 100) {
           clearInterval(interval)
-          window.downloadComplete(true, "Download Finished (Test Mode)")
+          window.downloadComplete({
+            success: true,
+            completed: isPlaylist ? 5 : 1,
+            failed: 0,
+            total: isPlaylist ? 5 : 1,
+            message: '다운로드 완료! (테스트 모드)'
+          })
         }
       }, 50)
     }

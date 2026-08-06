@@ -40,7 +40,7 @@
         <!-- Playlist download group -->
         <div v-if="videoInfo.is_playlist" class="action-group">
           <div class="action-buttons">
-            <button @click="$emit('download', 'video', videoInfo.url)" class="btn-action btn-video">
+            <button @click="$emit('download', 'video', videoInfo.url, 'playlist')" class="btn-action btn-video">
               <div class="btn-action-content">
                 <div class="action-icon-wrapper">
                   <Video class="action-icon" />
@@ -50,7 +50,7 @@
               <span class="format-badge">MP4</span>
             </button>
             
-            <button @click="$emit('download', 'audio', videoInfo.url)" class="btn-action btn-audio">
+            <button @click="$emit('download', 'audio', videoInfo.url, 'playlist')" class="btn-action btn-audio">
               <div class="btn-action-content">
                 <div class="action-icon-wrapper">
                   <Music class="action-icon" />
@@ -64,7 +64,7 @@
         
         <!-- Single video download group (Original style) -->
         <div v-else class="action-buttons">
-          <button @click="$emit('download', 'video', videoInfo.url)" class="btn-action btn-video">
+          <button @click="$emit('download', 'video', videoInfo.url, 'single')" class="btn-action btn-video">
             <div class="btn-action-content">
               <div class="action-icon-wrapper">
                 <Video class="action-icon" />
@@ -74,7 +74,7 @@
             <span class="format-badge">MP4</span>
           </button>
           
-          <button @click="$emit('download', 'audio', videoInfo.url)" class="btn-action btn-audio">
+          <button @click="$emit('download', 'audio', videoInfo.url, 'single')" class="btn-action btn-audio">
             <div class="btn-action-content">
               <div class="action-icon-wrapper">
                 <Music class="action-icon" />
@@ -100,11 +100,11 @@
           </div>
           
           <div class="shortcut-buttons">
-            <button @click="$emit('download', 'video', videoInfo.video_url)" class="btn-shortcut btn-video">
+            <button @click="$emit('download', 'video', videoInfo.video_url, 'single')" class="btn-shortcut btn-video">
               <Video class="btn-icon" />
               <span>Video (MP4)</span>
             </button>
-            <button @click="$emit('download', 'audio', videoInfo.video_url)" class="btn-shortcut btn-audio">
+            <button @click="$emit('download', 'audio', videoInfo.video_url, 'single')" class="btn-shortcut btn-audio">
               <Music class="btn-icon" />
               <span>Audio (MP3)</span>
             </button>

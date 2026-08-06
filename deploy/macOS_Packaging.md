@@ -21,12 +21,12 @@ This will:
 1. Build the Vue.js frontend.
 2. Copy the correct `ffmpeg` binary.
 3. Generate the `icon.icns` file from `icon.png`.
-4. Run PyInstaller and output a `PyVue-Tube.app` in the `dist/` directory.
+4. Run PyInstaller and output an `ArchiveTube.app` in the `dist/` directory.
 
 ## Step 2: Test the `.app` Bundle
 Before packaging, navigate to the `dist` folder and test your `.app` bundle:
 ```bash
-open dist/PyVue-Tube.app
+open dist/ArchiveTube.app
 ```
 Ensure everything is working properly (including downloading videos using the bundled ffmpeg).
 
@@ -35,16 +35,16 @@ Navigate to your project root and run `create-dmg`:
 
 ```bash
 create-dmg \
-  --volname "PyVue-Tube Installer" \
+  --volname "ArchiveTube Installer" \
   --volicon "icon.icns" \
   --window-pos 200 120 \
   --window-size 800 400 \
   --icon-size 100 \
-  --icon "PyVue-Tube.app" 200 190 \
-  --hide-extension "PyVue-Tube.app" \
+  --icon "ArchiveTube.app" 200 190 \
+  --hide-extension "ArchiveTube.app" \
   --app-drop-link 600 185 \
-  "dist/PyVue-Tube.dmg" \
-  "dist/PyVue-Tube.app/"
+  "dist/ArchiveTube.dmg" \
+  "dist/ArchiveTube.app/"
 ```
 
 ### Explanation of flags:
@@ -56,4 +56,4 @@ create-dmg \
 - `--app-drop-link`: Creates a symbolic link to `/Applications` inside the dmg window for drag-and-drop installation.
 
 ## Step 4: Verification
-Once the command finishes, `PyVue-Tube.dmg` will be created in the `dist` folder. Double-click it to verify the sleek drag-and-drop installation works as expected!
+Once the command finishes, `ArchiveTube.dmg` will be created in the `dist` folder. Double-click it to verify the drag-and-drop installation works as expected.

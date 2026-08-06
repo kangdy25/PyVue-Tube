@@ -2,13 +2,18 @@
   <div class="progress-card">
     <div class="progress-header">
       <div class="status-container">
-        <Loader2 v-if="progress < 100 && !downloadStatus.includes('완료') && !downloadStatus.includes('Completed')" class="status-icon spinner indigo-text" />
+        <Loader2 v-if="progress < 100" class="status-icon spinner indigo-text" />
+        <AlertCircle v-else-if="failed > 0" class="status-icon error-text" />
         <CheckCircle2 v-else class="status-icon success-text" />
         <span class="status-text">{{ downloadStatus }}</span>
       </div>
       <span class="progress-percentage">
         {{ progress.toFixed(1) }}<span class="percentage-symbol">%</span>
       </span>
+    </div>
+
+    <div v-if="total" class="batch-summary">
+      항목 {{ current || completed }}/{{ total }} · 완료 {{ completed }} · 실패 {{ failed }}
     </div>
     
     <!-- Premium Animated Progress Bar -->
@@ -25,7 +30,7 @@
 
 <script setup>
 import { computed } from 'vue'
-import { Loader2, CheckCircle2 } from 'lucide-vue-next'
+import { Loader2, CheckCircle2, AlertCircle } from 'lucide-vue-next'
 
 const props = defineProps({
   progress: {
@@ -35,6 +40,22 @@ const props = defineProps({
   downloadStatus: {
     type: String,
     required: true
+  },
+  current: {
+    type: Number,
+    default: null
+  },
+  total: {
+    type: Number,
+    default: null
+  },
+  completed: {
+    type: Number,
+    default: 0
+  },
+  failed: {
+    type: Number,
+    default: 0
   }
 })
 
@@ -96,6 +117,7 @@ $glass-border: rgba(255, 255, 255, 0.1);
     
     &.indigo-text { color: #818cf8; }
     &.success-text { color: #34d399; } // Emerald 400
+    &.error-text { color: #f87171; }
   }
 
   .status-text {
@@ -116,6 +138,12 @@ $glass-border: rgba(255, 255, 255, 0.1);
   .percentage-symbol {
     font-size: 1.125rem;
   }
+}
+
+.batch-summary {
+  color: #94a3b8;
+  font-size: 0.8125rem;
+  font-weight: 600;
 }
 
 .spinner {
