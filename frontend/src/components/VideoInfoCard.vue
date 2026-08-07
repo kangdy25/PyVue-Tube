@@ -27,35 +27,77 @@
         <h2 class="video-title" :title="videoInfo.title">
           {{ videoInfo.title }}
         </h2>
-        <span class="playlist-count-text">{{ videoInfo.video_count }} videos to download</span>
+        <span class="playlist-count-text">
+          <template v-if="playlistEntries.length">
+            {{ selectedIndices.length }}/{{ selectableIndices.length }}개 영상 선택
+          </template>
+          <template v-else>{{ videoInfo.video_count }}개 영상</template>
+        </span>
       </div>
       
       <!-- Single Video info -->
       <h2 v-else class="video-title" :title="videoInfo.title">
         {{ videoInfo.title }}
       </h2>
+
+      <div v-if="videoInfo.is_playlist && playlistEntries.length" class="playlist-selector">
+        <div class="selector-header">
+          <span>다운로드할 영상</span>
+          <div class="selector-actions">
+            <button type="button" @click="selectAll" :disabled="isDownloading">전체 선택</button>
+            <button type="button" @click="clearSelection" :disabled="isDownloading">선택 해제</button>
+          </div>
+        </div>
+        <div class="selector-list">
+          <label
+            v-for="entry in playlistEntries"
+            :key="entry.index"
+            class="selector-item"
+            :class="{ unavailable: !entry.is_available }"
+          >
+            <input
+              v-model="selectedIndices"
+              type="checkbox"
+              :value="entry.index"
+              :disabled="isDownloading || !entry.is_available"
+            />
+            <span class="entry-index">{{ String(entry.index).padStart(2, '0') }}</span>
+            <span class="entry-title" :title="entry.title">{{ entry.title }}</span>
+            <span v-if="entry.duration" class="entry-duration">{{ formatDuration(entry.duration) }}</span>
+            <span v-else-if="!entry.is_available" class="entry-duration">사용 불가</span>
+          </label>
+        </div>
+      </div>
       
       <!-- Action Buttons Section -->
       <div class="action-sections">
         <!-- Playlist download group -->
         <div v-if="videoInfo.is_playlist" class="action-group">
           <div class="action-buttons">
-            <button @click="$emit('download', 'video', videoInfo.url, 'playlist')" class="btn-action btn-video">
+            <button
+              @click="downloadPlaylist('video')"
+              :disabled="!canDownloadPlaylist"
+              class="btn-action btn-video"
+            >
               <div class="btn-action-content">
                 <div class="action-icon-wrapper">
                   <Video class="action-icon" />
                 </div>
-                <span class="action-text">Download Entire Playlist</span>
+                <span class="action-text">Download Selected Videos</span>
               </div>
               <span class="format-badge">MP4</span>
             </button>
             
-            <button @click="$emit('download', 'audio', videoInfo.url, 'playlist')" class="btn-action btn-audio">
+            <button
+              @click="downloadPlaylist('audio')"
+              :disabled="!canDownloadPlaylist"
+              class="btn-action btn-audio"
+            >
               <div class="btn-action-content">
                 <div class="action-icon-wrapper">
                   <Music class="action-icon" />
                 </div>
-                <span class="action-text">Extract All Audio (MP3)</span>
+                <span class="action-text">Extract Selected Audio</span>
               </div>
               <span class="format-badge">MP3</span>
             </button>
@@ -64,7 +106,7 @@
         
         <!-- Single video download group (Original style) -->
         <div v-else class="action-buttons">
-          <button @click="$emit('download', 'video', videoInfo.url, 'single')" class="btn-action btn-video">
+          <button @click="emit('download', 'video', videoInfo.url, 'single')" :disabled="isDownloading" class="btn-action btn-video">
             <div class="btn-action-content">
               <div class="action-icon-wrapper">
                 <Video class="action-icon" />
@@ -74,7 +116,7 @@
             <span class="format-badge">MP4</span>
           </button>
           
-          <button @click="$emit('download', 'audio', videoInfo.url, 'single')" class="btn-action btn-audio">
+          <button @click="emit('download', 'audio', videoInfo.url, 'single')" :disabled="isDownloading" class="btn-action btn-audio">
             <div class="btn-action-content">
               <div class="action-icon-wrapper">
                 <Music class="action-icon" />
@@ -100,11 +142,11 @@
           </div>
           
           <div class="shortcut-buttons">
-            <button @click="$emit('download', 'video', videoInfo.video_url, 'single')" class="btn-shortcut btn-video">
+            <button @click="emit('download', 'video', videoInfo.video_url, 'single')" :disabled="isDownloading" class="btn-shortcut btn-video">
               <Video class="btn-icon" />
               <span>Video (MP4)</span>
             </button>
-            <button @click="$emit('download', 'audio', videoInfo.video_url, 'single')" class="btn-shortcut btn-audio">
+            <button @click="emit('download', 'audio', videoInfo.video_url, 'single')" :disabled="isDownloading" class="btn-shortcut btn-audio">
               <Music class="btn-icon" />
               <span>Audio (MP3)</span>
             </button>
@@ -116,16 +158,51 @@
 </template>
 
 <script setup>
+import { computed, ref, watch } from 'vue'
 import { Video, Music, ListVideo } from 'lucide-vue-next'
 
 const props = defineProps({
   videoInfo: {
     type: Object,
     required: true
+  },
+  isDownloading: {
+    type: Boolean,
+    default: false
   }
 })
 
-defineEmits(['download'])
+const emit = defineEmits(['download'])
+const selectedIndices = ref([])
+const playlistEntries = computed(() => props.videoInfo.entries || [])
+const selectableIndices = computed(() => (
+  playlistEntries.value.filter(entry => entry.is_available).map(entry => entry.index)
+))
+const canDownloadPlaylist = computed(() => (
+  !props.isDownloading && (
+    !playlistEntries.value.length || selectedIndices.value.length > 0
+  )
+))
+
+const selectAll = () => {
+  selectedIndices.value = [...selectableIndices.value]
+}
+
+const clearSelection = () => {
+  selectedIndices.value = []
+}
+
+const downloadPlaylist = (format) => {
+  if (!canDownloadPlaylist.value) return
+  const items = playlistEntries.value.length ? [...selectedIndices.value].sort((a, b) => a - b) : null
+  emit('download', format, props.videoInfo.url, 'playlist', items)
+}
+
+watch(
+  () => props.videoInfo,
+  () => selectAll(),
+  { immediate: true }
+)
 
 const formatDuration = (seconds) => {
   if (!seconds) return '';
@@ -320,6 +397,90 @@ $transition-snappy: 300ms cubic-bezier(0.4, 0, 0.2, 1);
   gap: 1rem;
 }
 
+.playlist-selector {
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 0.875rem;
+  overflow: hidden;
+  background-color: rgba(2, 6, 23, 0.35);
+}
+
+.selector-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.75rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  color: #cbd5e1;
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.selector-actions {
+  display: flex;
+  gap: 0.375rem;
+
+  button {
+    padding: 0.3rem 0.5rem;
+    border: 1px solid rgba(129, 140, 248, 0.25);
+    border-radius: 0.375rem;
+    background: rgba(99, 102, 241, 0.08);
+    color: #a5b4fc;
+    font-size: 0.6875rem;
+    cursor: pointer;
+
+    &:disabled {
+      opacity: 0.45;
+      cursor: not-allowed;
+    }
+  }
+}
+
+.selector-list {
+  max-height: 11rem;
+  overflow-y: auto;
+}
+
+.selector-item {
+  display: grid;
+  grid-template-columns: auto 1.5rem minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.625rem 0.75rem;
+  color: #cbd5e1;
+  font-size: 0.75rem;
+  cursor: pointer;
+
+  &:not(:last-child) {
+    border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  }
+
+  &:hover {
+    background-color: rgba(255, 255, 255, 0.03);
+  }
+
+  &.unavailable {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
+
+  input {
+    accent-color: $primary-hover;
+  }
+
+  .entry-index,
+  .entry-duration {
+    color: $text-slate-500;
+    font-family: monospace;
+  }
+
+  .entry-title {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
+
 .action-buttons {
   display: flex;
   flex-direction: column;
@@ -342,7 +503,12 @@ $transition-snappy: 300ms cubic-bezier(0.4, 0, 0.2, 1);
   justify-content: space-between;
   transition: all $transition-snappy;
 
-  &:hover {
+  &:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
+
+  &:hover:not(:disabled) {
     background-color: rgba(255, 255, 255, 0.1);
   }
 
@@ -494,18 +660,23 @@ $transition-snappy: 300ms cubic-bezier(0.4, 0, 0.2, 1);
       font-weight: 600;
       cursor: pointer;
       transition: all 200ms ease;
+
+      &:disabled {
+        opacity: 0.45;
+        cursor: not-allowed;
+      }
       
-      &:hover {
+      &:hover:not(:disabled) {
         background-color: rgba(255, 255, 255, 0.08);
         color: white;
       }
       
-      &.btn-video:hover {
+      &.btn-video:hover:not(:disabled) {
         border-color: rgba(99, 102, 241, 0.4);
         .btn-icon { color: #818cf8; }
       }
       
-      &.btn-audio:hover {
+      &.btn-audio:hover:not(:disabled) {
         border-color: rgba(139, 92, 246, 0.4);
         .btn-icon { color: #a78bfa; }
       }

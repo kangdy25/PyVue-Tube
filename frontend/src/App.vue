@@ -13,7 +13,7 @@
       <!-- Main Input Card -->
       <UrlInputCard
         v-model="url"
-        :isLoading="isLoading"
+        :isLoading="isLoading || isDownloading"
         @submit="fetchInfo"
       />
 
@@ -22,6 +22,7 @@
         <VideoInfoCard
           v-if="videoInfo"
           :videoInfo="videoInfo"
+          :isDownloading="isDownloading"
           @download="startDownload"
         />
       </transition>
@@ -29,13 +30,19 @@
       <!-- Progress Section -->
       <transition name="slide-up">
         <ProgressCard
-          v-if="isDownloading"
+          v-if="showProgress"
           :progress="progress"
           :downloadStatus="downloadStatus"
           :current="currentItem"
           :total="totalItems"
           :completed="completedItems"
           :failed="failedItems"
+          :remaining="remainingItems"
+          :isActive="isDownloading"
+          :canRetry="canRetry"
+          :cancelled="wasCancelled"
+          @cancel="cancelDownload"
+          @retry="retryDownload"
         />
       </transition>
 
@@ -44,7 +51,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, onBeforeUnmount } from 'vue'
 import AppHeader from './components/AppHeader.vue'
 import UrlInputCard from './components/UrlInputCard.vue'
 import VideoInfoCard from './components/VideoInfoCard.vue'
@@ -54,15 +61,40 @@ const url = ref('')
 const videoInfo = ref(null)
 const isLoading = ref(false)
 const isDownloading = ref(false)
+const showProgress = ref(false)
 const progress = ref(0)
 const downloadStatus = ref('')
 const currentItem = ref(null)
 const totalItems = ref(null)
 const completedItems = ref(0)
 const failedItems = ref(0)
+const remainingItems = ref(0)
+const currentJobId = ref(null)
+const canRetry = ref(false)
+const wasCancelled = ref(false)
+
+let mockInterval = null
+let mockContext = null
+
+const resetProgress = () => {
+  showProgress.value = true
+  isDownloading.value = true
+  progress.value = 0
+  downloadStatus.value = '다운로드 준비 중...'
+  currentItem.value = null
+  totalItems.value = null
+  completedItems.value = 0
+  failedItems.value = 0
+  remainingItems.value = 0
+  canRetry.value = false
+  wasCancelled.value = false
+  currentJobId.value = null
+}
 
 onMounted(() => {
   window.updateProgress = (update) => {
+    if (update.job_id && currentJobId.value && update.job_id !== currentJobId.value) return
+    if (update.job_id && !currentJobId.value) currentJobId.value = update.job_id
     progress.value = update.percent
     downloadStatus.value = update.status || '다운로드 중...'
     currentItem.value = update.current ?? null
@@ -74,16 +106,23 @@ onMounted(() => {
     downloadStatus.value = update.status || update
   }
   window.downloadComplete = (result) => {
-    progress.value = 100
+    if (result.job_id && currentJobId.value && result.job_id !== currentJobId.value) return
+    if (result.job_id) currentJobId.value = result.job_id
+    progress.value = result.cancelled ? (result.progress ?? progress.value) : 100
     downloadStatus.value = result.message
     totalItems.value = result.total || totalItems.value
     completedItems.value = result.completed || 0
     failedItems.value = result.failed || 0
-    setTimeout(() => { 
-      isDownloading.value = false
-      progress.value = 0
-    }, 5000)
+    remainingItems.value = result.remaining || 0
+    canRetry.value = Boolean(result.can_retry)
+    wasCancelled.value = Boolean(result.cancelled)
+    isDownloading.value = false
+    showProgress.value = true
   }
+})
+
+onBeforeUnmount(() => {
+  if (mockInterval) clearInterval(mockInterval)
 })
 
 const fetchInfo = async () => {
@@ -113,6 +152,13 @@ const fetchInfo = async () => {
             thumbnail: "https://images.unsplash.com/photo-1611162617474-5b21e879e113?q=80&w=1000&auto=format&fit=crop",
             video_count: 5,
             url: url.value,
+            entries: [
+              { index: 1, id: 'mock-1', title: '프로젝트 소개와 개발 환경 준비', duration: 365, is_available: true },
+              { index: 2, id: 'mock-2', title: 'Vue 3 인터페이스 구성', duration: 428, is_available: true },
+              { index: 3, id: 'mock-3', title: 'pywebview 브리지 연결', duration: 512, is_available: true },
+              { index: 4, id: 'mock-4', title: 'yt-dlp 다운로드 구현', duration: 476, is_available: true },
+              { index: 5, id: 'mock-5', title: 'PyInstaller 앱 패키징', duration: 391, is_available: true }
+            ],
             video_title: "Mock Video: 1. Setup pywebview and Vite",
             video_thumbnail: "https://images.unsplash.com/photo-1611162617474-5b21e879e113?q=80&w=1000&auto=format&fit=crop",
             video_duration: 365,
@@ -136,46 +182,55 @@ const fetchInfo = async () => {
   }
 }
 
-const startDownload = async (type, targetUrl, scope = 'single') => {
-  isDownloading.value = true
-  progress.value = 0
-  downloadStatus.value = '다운로드 준비 중...'
-  currentItem.value = null
-  totalItems.value = null
-  completedItems.value = 0
-  failedItems.value = 0
+const startDownload = async (type, targetUrl, scope = 'single', playlistItems = null) => {
+  if (isDownloading.value) return
+  resetProgress()
   const downloadUrl = targetUrl || url.value
   try {
     if (window.pywebview && window.pywebview.api) {
-      const res = await window.pywebview.api.download(downloadUrl, type, scope)
+      const res = await window.pywebview.api.download(downloadUrl, type, scope, playlistItems)
       if (!res.success) {
         alert('Error: ' + res.error)
         isDownloading.value = false
+        showProgress.value = false
+      } else {
+        currentJobId.value = res.job_id
       }
     } else {
-      // Mock progress for UI testing
+      const selectedItems = scope === 'playlist'
+        ? (playlistItems?.length ? playlistItems : videoInfo.value.entries.map(entry => entry.index))
+        : [1]
+      mockContext = { type, targetUrl: downloadUrl, scope, playlistItems: selectedItems }
+      currentJobId.value = `mock-${Date.now()}`
+      totalItems.value = selectedItems.length
       let p = 0
-      const interval = setInterval(() => {
+      mockInterval = setInterval(() => {
         p += 2.5
-        const currentVideo = Math.min(Math.ceil(p / 20), 5)
+        const currentVideo = Math.min(Math.ceil((p / 100) * selectedItems.length), selectedItems.length)
         const isPlaylist = scope === 'playlist'
         window.updateProgress({
+          job_id: currentJobId.value,
           percent: p,
           status: isPlaylist
-            ? `다운로드 중 (${currentVideo}/5): Mock Video Part ${currentVideo}`
-            : '다운로드 중...',
+            ? `다운로드 중 (${currentVideo}/${selectedItems.length}): 선택한 영상 ${selectedItems[currentVideo - 1]}`
+            : '다운로드 중: 현재 영상',
           current: isPlaylist ? currentVideo : null,
-          total: isPlaylist ? 5 : null,
-          completed: isPlaylist ? Math.max(0, currentVideo - 1) : 0,
+          total: selectedItems.length,
+          completed: Math.max(0, currentVideo - 1),
           failed: 0
         })
         if (p >= 100) {
-          clearInterval(interval)
+          clearInterval(mockInterval)
+          mockInterval = null
           window.downloadComplete({
+            job_id: currentJobId.value,
             success: true,
-            completed: isPlaylist ? 5 : 1,
+            cancelled: false,
+            can_retry: false,
+            completed: selectedItems.length,
             failed: 0,
-            total: isPlaylist ? 5 : 1,
+            total: selectedItems.length,
+            progress: 100,
             message: '다운로드 완료! (테스트 모드)'
           })
         }
@@ -184,6 +239,61 @@ const startDownload = async (type, targetUrl, scope = 'single') => {
   } catch (e) {
     isDownloading.value = false
   }
+}
+
+const cancelDownload = async () => {
+  if (!isDownloading.value || !currentJobId.value) return
+  downloadStatus.value = '취소 요청 중...'
+
+  if (window.pywebview && window.pywebview.api) {
+    const res = await window.pywebview.api.cancel_download(currentJobId.value)
+    if (!res.success) downloadStatus.value = res.error
+    return
+  }
+
+  if (mockInterval) {
+    clearInterval(mockInterval)
+    mockInterval = null
+  }
+  const total = totalItems.value || 1
+  const remaining = Math.max(0, total - completedItems.value)
+  window.downloadComplete({
+    job_id: currentJobId.value,
+    success: false,
+    cancelled: true,
+    can_retry: remaining > 0,
+    completed: completedItems.value,
+    failed: 0,
+    remaining,
+    total,
+    progress: progress.value,
+    message: '다운로드가 취소되었습니다.'
+  })
+}
+
+const retryDownload = async () => {
+  if (!canRetry.value || !currentJobId.value) return
+
+  if (window.pywebview && window.pywebview.api) {
+    const previousJobId = currentJobId.value
+    resetProgress()
+    const res = await window.pywebview.api.retry_download(previousJobId)
+    if (!res.success) {
+      isDownloading.value = false
+      downloadStatus.value = res.error
+      return
+    }
+    currentJobId.value = res.job_id
+    return
+  }
+
+  const remaining = mockContext?.playlistItems?.slice(completedItems.value) || [1]
+  await startDownload(
+    mockContext?.type || 'video',
+    mockContext?.targetUrl || url.value,
+    mockContext?.scope || 'single',
+    remaining
+  )
 }
 </script>
 
@@ -196,10 +306,11 @@ $text-slate-100: #f1f5f9;
   background-color: $bg-slate-950;
   color: $text-slate-100;
   font-family: Inter, system-ui, sans-serif;
-  overflow: hidden;
+  overflow-x: hidden;
+  overflow-y: auto;
   position: relative;
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: center;
   padding: 1rem;
   
@@ -238,6 +349,7 @@ $text-slate-100: #f1f5f9;
   display: flex;
   flex-direction: column;
   gap: 2rem;
+  margin: auto 0;
 }
 
 // Transitions

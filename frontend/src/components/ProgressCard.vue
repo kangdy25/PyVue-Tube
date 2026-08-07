@@ -2,8 +2,8 @@
   <div class="progress-card">
     <div class="progress-header">
       <div class="status-container">
-        <Loader2 v-if="progress < 100" class="status-icon spinner indigo-text" />
-        <AlertCircle v-else-if="failed > 0" class="status-icon error-text" />
+        <Loader2 v-if="isActive" class="status-icon spinner indigo-text" />
+        <AlertCircle v-else-if="failed > 0 || cancelled" class="status-icon error-text" />
         <CheckCircle2 v-else class="status-icon success-text" />
         <span class="status-text">{{ downloadStatus }}</span>
       </div>
@@ -14,23 +14,40 @@
 
     <div v-if="total" class="batch-summary">
       항목 {{ current || completed }}/{{ total }} · 완료 {{ completed }} · 실패 {{ failed }}
+      <span v-if="cancelled && remaining"> · 남음 {{ remaining }}</span>
     </div>
     
     <!-- Premium Animated Progress Bar -->
     <div class="progress-bar-container">
       <div 
         class="progress-bar-fill"
-        :class="{ 'is-complete': progress >= 100 }"
+        :class="{
+          'is-complete': progress >= 100 && failed === 0 && !cancelled,
+          'has-error': failed > 0 || cancelled
+        }"
       >
         <div class="progress-stripes"></div>
       </div>
+    </div>
+
+    <div class="job-actions">
+      <button v-if="isActive" type="button" class="btn-job cancel" @click="$emit('cancel')">
+        <Square class="btn-icon" />
+        다운로드 취소
+      </button>
+      <button v-else-if="canRetry" type="button" class="btn-job retry" @click="$emit('retry')">
+        <RotateCcw class="btn-icon" />
+        {{ cancelled ? '남은 항목 재시도' : '실패 항목 재시도' }}
+      </button>
     </div>
   </div>
 </template>
 
 <script setup>
 import { computed } from 'vue'
-import { Loader2, CheckCircle2, AlertCircle } from 'lucide-vue-next'
+import { Loader2, CheckCircle2, AlertCircle, RotateCcw, Square } from 'lucide-vue-next'
+
+defineEmits(['cancel', 'retry'])
 
 const props = defineProps({
   progress: {
@@ -56,6 +73,22 @@ const props = defineProps({
   failed: {
     type: Number,
     default: 0
+  },
+  remaining: {
+    type: Number,
+    default: 0
+  },
+  isActive: {
+    type: Boolean,
+    default: false
+  },
+  canRetry: {
+    type: Boolean,
+    default: false
+  },
+  cancelled: {
+    type: Boolean,
+    default: false
   }
 })
 
@@ -176,6 +209,10 @@ $glass-border: rgba(255, 255, 255, 0.1);
     background-image: linear-gradient(to right, #10b981, #2dd4bf); // Emerald 500 to Teal 400
   }
 
+  &.has-error {
+    background-image: linear-gradient(to right, #ef4444, #f97316);
+  }
+
   .progress-stripes {
     position: absolute;
     inset: 0;
@@ -192,6 +229,45 @@ $glass-border: rgba(255, 255, 255, 0.1);
     background-size: 1rem 1rem;
     animation: stripes 1s linear infinite;
     opacity: 0.5;
+  }
+}
+
+.job-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.btn-job {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.625rem 0.875rem;
+  border-radius: 0.625rem;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.04);
+  color: #cbd5e1;
+  font-size: 0.8125rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 200ms ease;
+
+  &:hover {
+    background: rgba(255, 255, 255, 0.08);
+  }
+
+  &.cancel:hover {
+    border-color: rgba(248, 113, 113, 0.45);
+    color: #fca5a5;
+  }
+
+  &.retry:hover {
+    border-color: rgba(129, 140, 248, 0.45);
+    color: #c7d2fe;
+  }
+
+  .btn-icon {
+    width: 0.875rem;
+    height: 0.875rem;
   }
 }
 </style>
