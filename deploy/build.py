@@ -25,7 +25,7 @@ def build_frontend():
     print("✅ Frontend build completed.\n")
 
 def prepare_binaries():
-    print("📦 Preparing ffmpeg binary...")
+    print("📦 Preparing bundled runtimes...")
     root_dir = get_project_root()
     bin_dir = os.path.join(root_dir, 'bin')
     os.makedirs(bin_dir, exist_ok=True)
@@ -35,7 +35,19 @@ def prepare_binaries():
     dest_path = os.path.join(bin_dir, dest_name)
     
     shutil.copy2(ffmpeg_exe, dest_path)
-    print(f"✅ Copied ffmpeg to {dest_path}\n")
+    print(f"✅ Copied ffmpeg to {dest_path}")
+
+    # Recent YouTube streams require yt-dlp's EJS challenge solver. Bundle a
+    # supported Node runtime so the macOS/Windows app does not depend on the
+    # user's shell PATH (GUI apps normally do not inherit it).
+    node_exe = shutil.which('node.exe' if platform.system() == 'Windows' else 'node')
+    if not node_exe:
+        print("❌ Node.js 22+ is required to build ArchiveTube.")
+        sys.exit(1)
+    node_name = 'node.exe' if platform.system() == 'Windows' else 'node'
+    node_dest = os.path.join(bin_dir, node_name)
+    shutil.copy2(node_exe, node_dest)
+    print(f"✅ Copied Node.js to {node_dest}\n")
 
 def prepare_icons():
     print("🎨 Preparing application icons...")
@@ -98,6 +110,7 @@ def build_pyinstaller(icon_path):
         '--name', APP_NAME,
         f'--add-data=frontend/dist{separator}frontend/dist',
         f'--add-data=bin{separator}bin',
+        '--collect-all', 'yt_dlp_ejs',
     ]
     
     if icon_path:

@@ -3,6 +3,7 @@ import yt_dlp
 import threading
 import sys
 import os
+import shutil
 import imageio_ffmpeg
 import platform
 import json
@@ -37,6 +38,32 @@ def get_ffmpeg_path():
     except Exception:
         # Not bundled, use imageio_ffmpeg directly
         return imageio_ffmpeg.get_ffmpeg_exe()
+
+
+def get_node_path():
+    """Return the bundled Node runtime, or a development-machine fallback."""
+    exe_name = 'node.exe' if platform.system() == 'Windows' else 'node'
+    try:
+        base_path = sys._MEIPASS
+        bundled_node = os.path.join(base_path, 'bin', exe_name)
+        if os.path.isfile(bundled_node):
+            return bundled_node
+    except Exception:
+        pass
+    return shutil.which(exe_name)
+
+
+def get_youtube_runtime_options():
+    """Configure the JS challenge runtime required by current YouTube streams."""
+    node_path = get_node_path()
+    if not node_path:
+        return {}
+    return {
+        # yt-dlp's PyPI package ships its EJS challenge scripts through the
+        # ``default`` dependency group. The packaged Node binary executes them
+        # even when this desktop app is launched outside a shell PATH.
+        'js_runtimes': {'node': {'path': node_path}},
+    }
 
 
 class BackendApi:
@@ -75,6 +102,7 @@ class BackendApi:
                     'skip_download': True,
                     'extract_flat': True,
                     'ffmpeg_location': get_ffmpeg_path(),
+                    **get_youtube_runtime_options(),
                 }
                 with yt_dlp.YoutubeDL(ydl_opts_playlist) as ydl:
                     p_info = ydl.extract_info(playlist_url, download=False)
@@ -120,6 +148,7 @@ class BackendApi:
                     'skip_download': True,
                     'noplaylist': True,
                     'ffmpeg_location': get_ffmpeg_path(),
+                    **get_youtube_runtime_options(),
                 }
                 with yt_dlp.YoutubeDL(ydl_opts_video) as ydl:
                     v_info = ydl.extract_info(video_url, download=False)
@@ -285,6 +314,7 @@ class BackendApi:
             'outtmpl': self._download_template(downloads_dir, scope),
             'progress_hooks': [progress_hook],
             'ffmpeg_location': get_ffmpeg_path(),
+            **get_youtube_runtime_options(),
         }
 
         if scope == 'playlist':

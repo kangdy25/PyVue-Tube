@@ -142,6 +142,14 @@ class PlaylistDownloadTests(unittest.TestCase):
         self.assertEqual(options['postprocessors'][0]['preferredcodec'], 'mp3')
         self.assertEqual(options['postprocessors'][0]['preferredquality'], '192')
 
+    def test_download_options_enable_the_bundled_node_runtime(self):
+        with patch.object(backend, 'get_node_path', return_value='/bundle/bin/node'):
+            options = backend.BackendApi()._build_download_options(
+                '/Downloads', 'video', 'single', lambda _: None
+            )
+
+        self.assertEqual(options['js_runtimes'], {'node': {'path': '/bundle/bin/node'}})
+
     def test_single_video_options_ignore_a_list_parameter(self):
         options = backend.BackendApi()._build_download_options(
             '/Downloads', 'video', 'single', lambda _: None
